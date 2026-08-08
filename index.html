@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="shortcut icon" href="#">
+    
+    <!-- Librerías de A-Frame y MindAR -->
+    <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js"></script>
+    <script src="https://cdn.jsdelivr.net/gh/donmccurdy/aframe-extras@v7.0.0/dist/aframe-extras.min.js"></script>
+
+    <script>
+      let experienciaIniciada = false;
+
+      AFRAME.registerComponent('video-pantalla', {
+        schema: {
+          escalaX: { type: 'number', default: 1 }, // Valores > 1.0 ensanchan el video; < 1.0 lo estrechan
+          escalaY: { type: 'number', default: 1 }  // Valores > 1.0 alargan el video; < 1.0 lo recortan
+        },
+
+        init: function () {
+          const el = this.el;
+          const videoEl = document.querySelector('#videoMor');
+          const targetEl = document.querySelector('#targetEntity');
+
+          el.addEventListener('model-loaded', () => {
+            const mesh = el.getObject3D('mesh');
+            if (!mesh) return;
+
+            const videoTexture = new THREE.VideoTexture(videoEl);
+            videoTexture.colorSpace = THREE.SRGBColorSpace;
+            videoTexture.flipY = false;
+
+            // Orientación horizontal base
+            videoTexture.center.set(0.5, 0.5);
+            videoTexture.rotation = 0; 
+
+            // Ajuste de escala UV
+            const repeatX = 1 / this.data.escalaX;
+            const repeatY = 1 / this.data.escalaY;
+
+            videoTexture.repeat.set(repeatX, repeatY);
+            videoTexture.offset.set((1 - repeatX) / 2, (1 - repeatY) / 2);
+
+            mesh.traverse((node) => {
+              if (node.isMesh && node.material) {
+                const aplicarEmision = (mat) => {
+                  if (mat.name === 'Material_Pelicula') {
+                    mat.map = videoTexture;
+                    mat.emissiveMap = videoTexture;
+                    mat.emissive = new THREE.Color(0xffffff);
+                    mat.emissiveIntensity = 0.8;
+                    mat.needsUpdate = true;
+                  }
+                };
+
+                if (Array.isArray(node.material)) {
+                  node.material.forEach(aplicarEmision);
+                } else {
+                  aplicarEmision(node.material);
+                }
+              }
+            });
+          });
+
+          targetEl.addEventListener('targetFound', () => {
+            if (experienciaIniciada) {
+              videoEl.play().catch(e => console.log("Error al reproducir video:", e));
+            }
+          });
+
+          targetEl.addEventListener('targetLost', () => {
+            videoEl.pause();
+          });
+        }
+      });
+
+      function solicitarPermisos() {
+        const overlay = document.querySelector('#overlayPermisos');
+        const video = document.querySelector('#videoMor');
+
+        // Desbloquear la reproducción de video tras el clic del usuario
+        video.play().then(() => {
+          video.pause();
+          video.currentTime = 0;
+          experienciaIniciada = true;
+          overlay.style.display = 'none';
+        }).catch((err) => {
+          console.warn("Aviso de video:", err);
+          experienciaIniciada = true;
+          overlay.style.display = 'none';
+        });
+      }
+    </script>
+
+    <style>
+      #overlayPermisos {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100vw;
+        height: 100vh;
+        background-color: rgba(0, 0, 0, 0.9);
+        z-index: 9999;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        color: #ffffff;
+        font-family: sans-serif;
+        text-align: center;
+        padding: 20px;
+        box-sizing: border-box;
+      }
+
+      #overlayPermisos h2 {
+        margin-bottom: 10px;
+        font-size: 24px;
+      }
+
+      #overlayPermisos p {
+        margin-bottom: 25px;
+        font-size: 14px;
+        color: #ccc;
+        max-width: 300px;
+      }
+
+      #btnPermisos {
+        padding: 14px 28px;
+        background-color: #ff4757;
+        color: white;
+        border: none;
+        border-radius: 30px;
+        font-weight: bold;
+        font-size: 16px;
+        box-shadow: 0 4px 12px rgba(255, 71, 87, 0.4);
+        cursor: pointer;
+        transition: transform 0.2s;
+      }
+
+      #btnPermisos:active {
+        transform: scale(0.95);
+      }
+    </style>
+  </head>
+  <body>
+    <div id="overlayPermisos">
+      <h2>Experiencia Interactiva</h2>
+      <p>Para visualizar la escena en realidad aumentada y escuchar el audio, otorga los permisos necesarios.</p>
+      <button id="btnPermisos" onclick="solicitarPermisos()">Activar cámara y audio</button>
+    </div>
+
+    <a-scene 
+      mindar-image="imageTargetSrc: ./targets.mind;" 
+      color-space="sRGB" 
+      renderer="colorManagement: true" 
+      vr-mode-ui="enabled: false" 
+      device-orientation-permission-ui="enabled: false">
+      
+      <a-assets>
+        <a-asset-item id="cineModel" src="./cine_amorcito.glb"></a-asset-item>
+        
+        <video 
+          id="videoMor" 
+          src="./videomor.mp4" 
+          preload="auto" 
+          loop="true" 
+          crossorigin="anonymous" 
+          playsinline 
+          webkit-playsinline>
+        </video>
+      </a-assets>
+
+      <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
+
+      <a-entity id="targetEntity" mindar-image-target="targetIndex: 0">
+        
+        <!-- Modelo 3D con animación y control de proporciones de video -->
+        <a-gltf-model 
+          src="#cineModel" 
+          position="0 0 0" 
+          rotation="0 0 0" 
+          scale="0.2 0.2 0.2"
+          animation-mixer="clip: *; loop: repeat"
+          video-pantalla="escalaX: 1; escalaY: 1">
+        </a-gltf-model>
+
+        <!-- Iluminación general clara -->
+        <a-light type="ambient" color="#ffffff" intensity="1.5"></a-light>
+        <a-light type="directional" color="#ffffff" intensity="1.0" position="0 0 1"></a-light>
+
+      </a-entity>
+    </a-scene>
+  </body>
+</html>
